@@ -16,6 +16,41 @@ module Squeel
           self.reverse_order_value = !reverse_order_value
           self
         end
+        
+        def build_arel
+          arel = Arel::SelectManager.new(table.engine, table)
+
+          build_joins(arel, joins_values.flatten) unless joins_values.empty?
+
+          collapse_wheres(arel, where_visit((where_values - ['']).uniq))
+
+          arel.having(*having_visit(having_values.uniq.reject{|h| h.blank?})) unless having_values.empty?
+
+          arel.take(connection.sanitize_limit(limit_value)) if limit_value
+          arel.skip(offset_value.to_i) if offset_value
+
+          arel.group(*group_visit(group_values.uniq.reject{|g| g.blank?})) unless group_values.empty?
+
+          build_order(arel)
+
+          build_select(arel, select_visit(select_values.uniq))
+
+          arel.distinct(distinct_value)
+          arel.from(build_from) if from_value
+          arel.lock(lock_value) if lock_value
+
+          # Reorder bind indexes when joins or subqueries include more bindings.
+          # Special for PostgreSQL
+          # if arel.bind_values.any? || bind_values.size > 1
+          #   bvs = arel.bind_values + bind_values
+          #   arel.ast.grep(Arel::Nodes::BindParam).each_with_index do |bp, i|
+          #     column = bvs[i].first
+          #     bp.replace connection.substitute_at(column)
+          #   end
+          # end
+
+          arel
+        end
 
         def build_join_dependency(manager, joins)
           buckets = joins.group_by do |join|
